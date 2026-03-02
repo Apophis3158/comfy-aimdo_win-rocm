@@ -1,6 +1,5 @@
 #include "plat.h"
 
-
 #define SIZE_HASH_SIZE 1024
 
 typedef struct SizeEntry {

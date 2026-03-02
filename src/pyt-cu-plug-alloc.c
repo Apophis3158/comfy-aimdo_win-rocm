@@ -37,7 +37,6 @@ void allocations_analyze() {
 
 SHARED_EXPORT
 void *alloc_fn(size_t size, int device, cudaStream_t stream) {
-    CUresult err;
     VramBuffer *entry;
 
     log(VERBOSE, "%s (start): size=%zuk, device=%d\n", __func__, size / K, device);
