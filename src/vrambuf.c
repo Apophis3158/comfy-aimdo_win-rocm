@@ -14,6 +14,7 @@ void *vrambuf_create(int device, size_t max_size) {
     buf->max_size = max_size;
 
     if (!CHECK_CU(cuMemAddressReserve(&buf->base_ptr, max_size, 0, 0, 0))) {
+        log(ERROR, "%s: %d %zuk\n", __func__, device, max_size / K);
         free(buf);
         return NULL;
     }
