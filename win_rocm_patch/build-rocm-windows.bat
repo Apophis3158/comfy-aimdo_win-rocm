@@ -14,18 +14,37 @@ echo   Building comfy-aimdo for Windows ROCm
 echo ============================================
 echo.
 
-REM ---- Prompt for paths ----
-echo Enter the path to your ROCm SDK core directory.
-echo This is typically inside your venv, e.g.:
-echo   C:\ComfyUI\venv\Lib\site-packages\_rocm_sdk_core
-echo.
-set /p ROCM_PATH="ROCm SDK path: "
+REM ---- ROCm SDK Path Detection ----
+where hipconfig >nul 2>nul
+if !errorlevel! equ 0 (
+    for /f "usebackq tokens=*" %%i in (`hipconfig --path`) do set "ROCM_PATH=%%i"
+    if defined ROCM_PATH (
+        echo Detected ROCM_PATH from hipconfig: !ROCM_PATH!
+    )
+) else (
+    echo.
+    echo ROCM_PATH environment variable not set and hipconfig not found.
+    echo Enter the path to your ROCm SDK core directory.
+    echo This is typically inside your venv, e.g.:
+    echo   C:\ComfyUI\venv\Lib\site-packages\_rocm_sdk_core
+    echo.
+    set /p ROCM_PATH="ROCm SDK path: "
+)
 
 echo.
-echo Enter the path to your CUDA toolkit installation, e.g.:
-echo   C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9
-echo.
-set /p CUDA_ORIG="CUDA path: "
+
+REM ---- CUDA Path Detection ----
+if defined CUDA_PATH (
+    set "CUDA_ORIG=%CUDA_PATH%"
+    echo Detected CUDA_PATH environment variable: !CUDA_ORIG!
+) else (
+    echo.
+    echo CUDA_PATH environment variable not found.
+    echo Enter the path to your CUDA toolkit installation, e.g.:
+    echo   C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9
+    echo.
+    set /p CUDA_ORIG="CUDA path: "
+)
 
 echo.
 
@@ -53,17 +72,31 @@ if not exist "%DETOURS_DIR%" (
         exit /b 1
     )
 )
+
+for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VS_PATH=%%i"
+if not defined VS_PATH (
+    REM ---- Visual Studio Path Prompt ----
+    echo.
+    echo Could not use vswhere.exe.
+    echo Enter the path to your Visual Studio installation directory.
+    echo This is the folder containing the 'VC' folder, e.g.:
+    echo   C:\Program Files\Microsoft Visual Studio\2022\Community
+    echo.
+    set /p VS_PATH="Visual Studio Path: "
+)
+
+if not exist "%VS_PATH%\VC\Tools\MSVC\" (
+    echo ERROR: Visual Studio path invalid or MSVC tools missing: %VS_PATH%
+    exit /b 1
+)
+echo Found VS at: %VS_PATH%
+
 if not exist "%DETOURS_DIR%\lib.X64\detours.lib" (
     echo Building Detours...
-    for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VS_PATH_DETOURS=%%i"
-    if not defined VS_PATH_DETOURS (
-        echo ERROR: Could not find Visual Studio for building Detours.
-        exit /b 1
-    )
     set "DETOURS_BUILD_BAT=%TEMP%\build_detours_%RANDOM%.bat"
     (
         echo @echo off
-        echo call "!VS_PATH_DETOURS!\VC\Auxiliary\Build\vcvars64.bat"
+        echo call "!VS_PATH!\VC\Auxiliary\Build\vcvars64.bat"
         echo cd /d "!DETOURS_DIR!"
         echo cd src
 		echo nmake
@@ -176,19 +209,6 @@ echo Compiling...
 set "HIP_SRC_PATH=%CD%\hip_src"
 if not exist comfy_aimdo mkdir comfy_aimdo
 if not exist obj mkdir obj
-
-REM ---- Visual Studio Path Prompt ----
-echo Enter the path to your Visual Studio installation directory.
-echo This is the folder containing the 'VC' folder, e.g.:
-echo   C:\Program Files\Microsoft Visual Studio\2022\Community
-echo.
-set /p VS_PATH="Visual Studio Path: "
-
-if not exist "%VS_PATH%\VC\Tools\MSVC\" (
-    echo ERROR: Visual Studio path invalid or MSVC tools missing: %VS_PATH%
-    exit /b 1
-)
-echo Found VS at: %VS_PATH%
 
 REM ---- Auto-detect MSVC Version ----
 set "MSVC_VER="
