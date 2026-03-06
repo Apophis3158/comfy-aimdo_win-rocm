@@ -6,6 +6,8 @@ SHARED_EXPORT
 void *vrambuf_create(int device, size_t max_size) {
     VramBuffer *buf;
 
+    max_size = CUDA_ALIGN_UP(max_size);
+
     buf = (VramBuffer *)calloc(1, sizeof(*buf) + sizeof(CUmemGenericAllocationHandle) * max_size / VRAM_CHUNK_SIZE);
     if (!buf) {
         return NULL;
@@ -14,6 +16,7 @@ void *vrambuf_create(int device, size_t max_size) {
     buf->max_size = max_size;
 
     if (!CHECK_CU(cuMemAddressReserve(&buf->base_ptr, max_size, 0, 0, 0))) {
+        log(ERROR, "%s: %d %zuk\n", __func__, device, max_size / K);
         free(buf);
         return NULL;
     }
@@ -38,12 +41,12 @@ bool vrambuf_grow(void *arg, size_t required_size) {
         return true;
     }
 
-    grow_to = (required_size + VRAM_CHUNK_SIZE - 1) & ~(VRAM_CHUNK_SIZE - 1);
+    grow_to = ALIGN_UP(required_size, VRAM_CHUNK_SIZE);
     if (grow_to > buf->max_size) {
         grow_to = buf->max_size;
     }
 
-    vbars_free(wddm_budget_deficit(buf->device, grow_to - buf->allocated));
+    vbars_free(budget_deficit(grow_to - buf->allocated));
     while (buf->allocated < grow_to) {
         size_t to_allocate = grow_to - buf->allocated;
         if (to_allocate > VRAM_CHUNK_SIZE) {

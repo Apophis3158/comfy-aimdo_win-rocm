@@ -1,15 +1,13 @@
 #include "plat.h"
 #include "vrambuf.h"
 
-#define MIN_ALLOC_SHIFT 21
-#define MIN_ALLOC       (1 << MIN_ALLOC_SHIFT) /*2 MB as per Cuda page sizes and pytorch cacheing alloc */
-
+#define VMM_HASH_SHIFT  21
 #define VMM_HASH_SIZE   (1 << 12) 
 
 static VramBuffer* vmm_table[VMM_HASH_SIZE];
 
 static inline unsigned int vmm_hash(CUdeviceptr ptr) {
-    return ((uintptr_t)(void *)ptr >> MIN_ALLOC_SHIFT) % VMM_HASH_SIZE;
+    return ((uintptr_t)(void *)ptr >> VMM_HASH_SHIFT) % VMM_HASH_SIZE;
 }
 
 void allocations_analyze() {
@@ -39,18 +37,11 @@ void allocations_analyze() {
 
 SHARED_EXPORT
 void *alloc_fn(size_t size, int device, cudaStream_t stream) {
-    CUresult err;
     VramBuffer *entry;
-    size_t virt_size = size;
 
     log(VERBOSE, "%s (start): size=%zuk, device=%d\n", __func__, size / K, device);
 
-    if (virt_size < MIN_ALLOC) {
-        log(DEBUG, "Unexpected small allocation from pytorch. Rounding up virt allocation to 2MB");
-        virt_size = MIN_ALLOC;
-    }
-
-    entry = vrambuf_create(device, virt_size);
+    entry = vrambuf_create(device, size);
     if (!entry) {
         return NULL;
     }
