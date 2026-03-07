@@ -6,7 +6,7 @@ lib = control.lib
 
 # Bindings
 if lib is not None:
-    lib.vbar_allocate.argtypes = [ctypes.c_uint64, ctypes.c_int]
+    lib.vbar_allocate.argtypes = [ctypes.c_uint64, ctypes.c_int, ctypes.c_void_p]  # pre_addr=NULL
     lib.vbar_allocate.restype = ctypes.c_void_p
 
     lib.vbar_set_watermark_limit.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
@@ -46,7 +46,32 @@ if lib is not None:
 
 class ModelVBAR:
     def __init__(self, size, device):
-        self._ptr = lib.vbar_allocate(int(size), device)
+        # Ensure the DLL's HIP runtime is initialized for this device.
+        # control.init() only loads the DLL; lib.init(device_id) must also be
+        # called before any hipMem* API (including hipMemAddressReserve) will work.
+        if not control.init_device(device):
+            raise RuntimeError(f"Failed to initialize aimdo for device {device}")
+
+        # On WDDM Windows, hipMemAddressReserve is bounded by the driver memory
+        # budget, not the full virtual address space like on Linux. Cap to actual
+        # VRAM so callers don't need to know the GPU size, and retry with halving
+        # in case the budget is lower than total_memory reports.
+        try:
+            import torch
+            vram_total = torch.cuda.get_device_properties(device).total_memory
+            size = min(int(size), vram_total)
+        except Exception:
+            size = int(size)
+
+        self._ptr = None
+        attempt = int(size)
+        while attempt >= (32 << 20):  # don't go below one VBAR page (32 MB)
+            self._ptr = lib.vbar_allocate(attempt, device, None)
+            if self._ptr:
+                size = attempt
+                break
+            attempt //= 2
+
         if not self._ptr:
             raise MemoryError("VBAR allocation failed")
         self.device = device
@@ -118,7 +143,7 @@ class ModelVBAR:
         return list(buf)
 
     def __del__(self):
-        if hasattr(self, '_ptr') and self._ptr:
+        if hasattr(self, '_ptr') and self._ptr and lib is not None:
             lib.vbar_free(self._ptr)
             self._ptr = None
 

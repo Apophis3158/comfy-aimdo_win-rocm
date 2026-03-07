@@ -64,6 +64,7 @@ else:
         '        mod1(mv, page_nr, true, true);\n'
         '    }\n'
         '    remove_vbar(mv);\n'
+        '    CHECK_CU(cuMemAddressFree(mv->vbar, (size_t)mv->nr_pages * VBAR_PAGE_SIZE));\n'
         '    free(mv);\n'
         '}'
     )
@@ -128,6 +129,7 @@ else:
         '    buf->max_size = max_size;\n'
         '\n'
         '    if (!CHECK_CU(cuMemAddressReserve(&buf->base_ptr, max_size, 0, 0, 0))) {\n'
+        '        log(ERROR, "%s: %d %zuk\\n", __func__, device, max_size / K);\n'
         '        free(buf);\n'
         '        return NULL;\n'
         '    }'
@@ -141,6 +143,7 @@ else:
         '        buf->base_ptr = (CUdeviceptr)(uintptr_t)pre_reserved;\n'
         '    } else {\n'
         '        if (!CHECK_CU(cuMemAddressReserve(&buf->base_ptr, max_size, 0, 0, 0))) {\n'
+        '            log(ERROR, "%s: %d %zuk\\n", __func__, device, max_size / K);\n'
         '            free(buf);\n'
         '            return NULL;\n'
         '        }\n'
@@ -168,7 +171,7 @@ except FileNotFoundError:
 if 'vrambuf_create(device, virt_size, 0)' in c:
     print('  pyt-cu-plug-alloc.c : already patched.')
 else:
-    c = c.replace('vrambuf_create(device, virt_size)', 'vrambuf_create(device, virt_size, 0)')
+    c = c.replace('vrambuf_create(device, size)', 'vrambuf_create(device, size, 0)')
     open('hip_src/pyt-cu-plug-alloc.c', 'w').write(c)
     print('  pyt-cu-plug-alloc.c : patched OK.')
 

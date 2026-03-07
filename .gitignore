@@ -9,3 +9,4 @@ dist/
 *.egg-info/
 .venv/
 hip_src/
+comfy_aimdo/_version.py

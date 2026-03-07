@@ -62,17 +62,6 @@ if not exist "%CUDA_ORIG%" (
     exit /b 1
 )
 
-REM ---- Build Microsoft Detours from patch folder ----
-set "DETOURS_DIR=%SCRIPT_DIR%Detours"
-if not exist "%DETOURS_DIR%" (
-    echo Cloning Microsoft Detours into %DETOURS_DIR%...
-    git clone --depth 1 https://github.com/microsoft/Detours.git "%DETOURS_DIR%"
-    if %errorlevel% neq 0 (
-        echo ERROR: Failed to clone Detours. Is git in your PATH?
-        exit /b 1
-    )
-)
-
 for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VS_PATH=%%i"
 if not defined VS_PATH (
     REM ---- Visual Studio Path Prompt ----
@@ -90,6 +79,19 @@ if not exist "%VS_PATH%\VC\Tools\MSVC\" (
     exit /b 1
 )
 echo Found VS at: %VS_PATH%
+echo.
+
+REM ---- Build Microsoft Detours from patch folder ----
+set "DETOURS_DIR=%SCRIPT_DIR%Detours"
+if not exist "%DETOURS_DIR%" (
+    echo Cloning Microsoft Detours into %DETOURS_DIR%...
+    git clone --depth 1 https://github.com/microsoft/Detours.git "%DETOURS_DIR%"
+    if %errorlevel% neq 0 (
+        echo ERROR: Failed to clone Detours. Is git in your PATH?
+        exit /b 1
+    )
+    echo.
+)
 
 if not exist "%DETOURS_DIR%\lib.X64\detours.lib" (
     echo Building Detours...
@@ -113,6 +115,7 @@ if not exist "%DETOURS_DIR%\lib.X64\detours.lib" (
     )
 )
 echo Detours ready at: %DETOURS_DIR%
+echo.
 
 REM ---- Derive paths ----
 set "ROCM_CLANG=%ROCM_PATH%\lib\llvm\lib\clang"
@@ -292,6 +295,19 @@ if %errorlevel% neq 0 (
 )
 echo   model_vbar.py patched OK.
 
+REM ---- Copy ROCm runtime DLL to package folder ----
+if exist "%ROCM_PATH%\bin\amdhip64_7.dll" (
+    echo Copying amdhip64_7.dll to comfy_aimdo...
+    copy /Y "%ROCM_PATH%\bin\amdhip64_7.dll" "comfy_aimdo\" >nul
+    if !errorlevel! neq 0 (
+        echo WARNING: Failed to copy amdhip64_7.dll. You may need to copy it manually.
+    ) else (
+        echo   amdhip64_7.dll copied OK.
+    )
+) else (
+    echo WARNING: amdhip64_7.dll not found in %ROCM_PATH%\bin\
+)
+
 goto :cleanup
 
 :buildfailed
@@ -311,15 +327,11 @@ if %BUILD_RESULT% EQU 0 (
         for %%F in (comfy_aimdo\aimdo.dll) do echo Size:   %%~zF bytes
         echo.
         echo Now run:
-		echo   cd .. ^&^& pip install .
+		echo   cd .. ^&^& py -mpip install .
         echo.
-        echo After that, one manual step:
-        for /f "tokens=*" %%i in ('python -c "import site; print(site.getsitepackages()[0])"') do set "VENV_SITE=%%i"
-        echo Copy %ROCM_PATH%\bin\amdhip64_7.dll
-        echo   to !VENV_SITE!\Lib\site-packages\comfy_aimdo\
-        echo   This ensures the package uses the venv-local ROCm runtime.
-		echo   Otherwise, it will fall back to the system-wide version,
-		echo   which may fail if the versions differ.
+        echo Note: amdhip64_7.dll has been automatically copied 
+        echo to comfy_aimdo\ to ensure the package uses 
+        echo the local ROCm runtime.
         echo ============================================
     ) else (
         echo ============================================
