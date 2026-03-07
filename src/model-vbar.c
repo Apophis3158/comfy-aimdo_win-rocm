@@ -40,12 +40,13 @@ static inline void one_time_setup() {
 
 static bool vbars_dirty;
 
-void vbars_analyze() {
+SHARED_EXPORT
+uint64_t vbars_analyze(bool only_dirty) {
     size_t calculated_total_vram = 0;
 
     one_time_setup();
-    if (!vbars_dirty) {
-        return;
+    if (only_dirty && !vbars_dirty) {
+        return 0;
     }
     vbars_dirty = false;
     log(DEBUG, "---------------- VBAR Usage ---------------\n")
@@ -82,6 +83,7 @@ void vbars_analyze() {
     }
 
     log(DEBUG, "Total VRAM for VBARs: %zu MB\n", calculated_total_vram / M);
+    return (uint64_t)calculated_total_vram;
 }
 
 static inline bool mod1(ModelVBAR *mv, size_t page_nr, bool do_free, bool do_unpin) {
@@ -276,6 +278,12 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
     log(VVERBOSE, "%s (start): offset=%lldk, size=%lldk\n", __func__, (ull)(offset / K), (ull)(size / K));
     vbars_dirty = true;
 
+    /* Stopgap. If the we get a bad shared memory spike, collect it here on the next layer
+     * as the allocator is unreliable as it may not actually be called reliably when you
+     * really need to know you have spilled.
+     */
+    vbars_free(budget_deficit(0));
+
     if (page_end > mv->watermark) {
         log(VVERBOSE, "VBAR Allocation is above watermark\n");
         return VBAR_FAULT_OOM;
@@ -293,7 +301,7 @@ int vbar_fault(void *vbar, uint64_t offset, uint64_t size, uint32_t *signature) 
 
         log(VERBOSE, "VBAR needs to allocate VRAM for page %d\n", (int)page_nr);
 
-        if (wddm_budget_deficit(mv->device, VBAR_PAGE_SIZE) ||
+        if (budget_deficit(VBAR_PAGE_SIZE) ||
             (err = three_stooges(vaddr, VBAR_PAGE_SIZE, mv->device, &rp->handle)) != CUDA_SUCCESS) {
             if (err != CUDA_ERROR_OUT_OF_MEMORY) {
                 log(ERROR, "VRAM Allocation failed (non OOM)\n");
@@ -356,6 +364,7 @@ void vbar_free(void *vbar) {
         mod1(mv, page_nr, true, true);
     }
     remove_vbar(mv);
+    CHECK_CU(cuMemAddressFree(mv->vbar, (size_t)mv->nr_pages * VBAR_PAGE_SIZE));
     free(mv);
 }
 
@@ -364,6 +373,29 @@ size_t vbar_loaded_size(void *vbar) {
     ModelVBAR *mv = (ModelVBAR *)vbar;
 
     return mv->resident_count * VBAR_PAGE_SIZE;
+}
+
+SHARED_EXPORT
+size_t vbar_get_nr_pages(void *vbar) {
+    ModelVBAR *mv = (ModelVBAR *)vbar;
+    return mv->nr_pages;
+}
+
+SHARED_EXPORT
+size_t vbar_get_watermark(void *vbar) {
+    ModelVBAR *mv = (ModelVBAR *)vbar;
+    return mv->watermark;
+}
+
+SHARED_EXPORT
+void vbar_get_residency(void *vbar, uint8_t *out, size_t max_pages) {
+    ModelVBAR *mv = (ModelVBAR *)vbar;
+    size_t n = mv->nr_pages < max_pages ? mv->nr_pages : max_pages;
+    for (size_t i = 0; i < n; i++) {
+        ResidentPage *rp = &mv->residency_map[i];
+        /* bit 0: resident, bit 1: pinned */
+        out[i] = (rp->handle ? 1 : 0) | (rp->pinned ? 2 : 0);
+    }
 }
 
 SHARED_EXPORT
